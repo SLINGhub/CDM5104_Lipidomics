@@ -1,0 +1,538 @@
+---
+title: "Lipidomics Data Post-Processing in R"
+author: "Bo Burla, Singapure Lipidomics Incubator"
+date: 01 March 2023
+subtitle: 'CDM5104 Workshop'
+bibliography: references.bib
+editor: visual
+---
+
+## 1. Introduction
+
+In this project, you will go through some steps of a lipidomics data processing workflow using R with [tidyverse](https://www.tidyverse.org) packages. The example dataset used in the project was obtained from Tan et al. '*Variability of the Plasma Lipidome and Subclinical Coronary Atherosclerosis*' [@tan2022a].
+
+You will inspect and process this targeted mass spectrometry (MS)-based plasma lipidomics raw dataset, starting from peak areas, moving to data quality control and ending with a table of QC-filtered lipid concentration values. Careful inspection and quality control of an lipidomics raw data is essential for having a dataset of high quality for downstream analyses.
+
+## 2. Installing R and RStudio
+
+If you have these programs already installed on your computer, please ensure that you have R Version 4.1 or higher, and RStudio Version 2022.02 or higher installed. Otherwise, or if you have not yet installed then, proceed with following sequence:
+
+1.  R: Download from [https://cloud.r-project.org](https://cloud.r-project.org/){.uri}
+
+2.  RStudio: download from [https://posit.co/download/rstudio-desktop](https://posit.co/download/rstudio-desktop/){.uri}
+
+## 3. Installing R packages
+
+Please install following packages by running following code in your R console:
+
+``` r
+# CRAN packages
+install.packages(c("here", "tidyverse", "broom", "ggrepel", "ggpmisc"))
+
+# Bioconductor packages
+if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager") 
+  BiocManager::install(c("rgoslin"))
+```
+
+## Loading R packages
+
+We first load initialize this [Quarto](https://quarto.org) notebook and load the R packages used for the code below. We will employ several packages from the [`tidyverse`](https://www.tidyverse.org) which can be loaded using `library(tidyverse)`. The [`here`](https://here.r-lib.org) package provides the function `here()` that returns the root of the project no matter where on the file system it was saved. [`broom`](https://broom.tidymodels.org) provides functions to convert outputs of standard R functions such as `t.test` and `lm` into [tidy tables](https://r4ds.had.co.nz/tidy-data.html) (dataframes/tibbles). [`ggpmisc`](https://github.com/aphalo/ggpmisc) extends `ggplot2` with functions useful for annotations of axes and plotting models . [`rgoslin`](http://www.bioconductor.org/packages/release/bioc/html/rgoslin.html) provides a function to normalize nomenclatures and return structural details from lipid names.
+
+```{r 1-setup}
+knitr::opts_chunk$set(
+  collapse = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+  fig.height=4, 
+  fig.width=10, 
+  fig.retina=2, 
+  comment = "#>", 
+  fig.show = "hold")
+
+library(tidyverse)
+library(broom)
+library(ggpmisc)
+library(rgoslin)
+library(here)
+
+here::i_am("R/ProjectWork/CDM5104_Project.qmd")
+```
+
+## 3. Importing pre-processed raw data
+
+In the example study by [@tan2022], the lipidomics analysis was performed using targeted liquid chromatography-tandem mass spectrometry (LC-MS/MS) with multiple reaction monitoring (MRM), see also the corresponding CDM5104 lecture. The raw data from this analysis (chromatograms) were pre-processed by peak integration using MRMkit [@teo].
+
+> Start with loading the table containing peak areas for each measured lipid species in each sample. Check if the imported data in the variable (object) `d_orig` was imported correctly, i.e, by looling at the completeness of the import, correct format of the imported values and inspect column types.
+
+```{r 2-import-raw}
+
+d_orig <- readr::read_csv(file = here("data/ProjectWork/SPERFECT_SLINGpanel_MRMkit_RawAreas_Clean.csv"), col_names = TRUE, trim_ws = TRUE, na = c("NA", "ND", "n.d."))
+d_orig
+```
+
+## 4. Preparing and converting to a long format table
+
+Clean the imported dataset for easier handling later on, i.e., by removing `.mzML` from the `FILENAME`. Furthermore, we add the analysis order number `RUN_ID` as the first column, knowing that the imported data was in the analysed sequence.
+
+Furthermore, one sample (LT_batch6_51) was not measured correctly and will therefore be excluded from the subsequent processing.
+
+In the second step, we convert the data into the *long (narrow) format*. In the long format, every observation ( = every lipid/sample pair) is a row and columns represent measured variables (e.g. peak area, RT) for each observation (pair) is a row. Especially in this phase of the data analysis the long format is helpful. See also [The Tidyverse Cookbook](https://rstudio-education.github.io/tidyverse-cookbook/tidy.html). We can convert the format easily in R using the `dplyr` [`pivot`](https://tidyr.tidyverse.org/articles/pivot.html) functions.
+
+> Have a look at the resulting table. What are the advantages and disadvantages of this format?
+
+```{r 3-reshape}
+d_orig <- d_orig |> 
+  mutate(FILENAME = stringr::str_replace(FILENAME, ".mzML", "")) |> 
+  filter(FILENAME != "LT_batch6_51") |> 
+  mutate(RUN_ID = row_number(), .before = 1)
+
+d_long <- d_orig |>  
+  pivot_longer(names_to = "LIPID", values_to = "AREA", cols = -RUN_ID:-QC_TYPE) %>% 
+  arrange(LIPID) 
+
+
+d_long
+```
+
+## 5. A first look at the analysis
+
+Now we are ready to have a first look on how the analysis went. For this we inspect the peak areas of internal standards (ISTDs), see lecture for more information on *internal standardization*. Different QC samples were included in this analysis, which serve different functions. See [@broadhurstGuidelinesConsiderationsUse2018] for a detailed description of QC samples in metabolomics, which we also adopted for our lipidomics assays.
+
+-   BQC: Batch (Process) QC
+-   TQC: Technical (instrument) QC
+-   PBLK: Process (extraction) Blank
+-   SBLK: Solvent Blank
+-   RQC: Response QCs
+
+> Examine the plots, looking at the differences between the plotted internal standard peak areas and differences between the different QC sample types.
+>
+> NOTE: you can also find a PDF with the corresponding plot in the folder `output`
+
+```{r 4-plot-runscatter-areas, fig.height=5}
+
+# Filter for ISTDs only
+d_istd <- d_long %>% filter(str_detect(LIPID, "ISTD"))
+#d_plot <- d_long %>% filter(str_detect(LIPID, "ISTD") & str_detect(LIPID, "Cer"))
+
+# Convert QC_TYPE to a factor and sort, to ensure correct layering in plot
+d_istd$QC_TYPE <- factor(d_istd$QC_TYPE, c("SAMPLE", "BQC", "TQC", "PBLK","UBLK","RQC"))
+d_istd <- d_istd |> arrange(QC_TYPE)
+
+# Define colors and shapes for each QC_TYPE
+qc_colors <- c(SAMPLE = "grey50", BQC = "red", TQC = "blue", 
+               PBLK = "green", SBLK = "darkgreen", UBLK = "green2", RQC = "pink3")
+
+qc_shapes <- c(SAMPLE = 1, BQC = 21, TQC = 21, 
+               PBLK = 21, SBLK = 23, UBLK = 1,  RQC = 6)
+
+# Plot
+p <- ggplot(d_istd, aes(x=RUN_ID, y=AREA)) + 
+        geom_point(aes(colour = QC_TYPE, fill = QC_TYPE, shape  = QC_TYPE),
+                   size = 1, alpha =0.7, stroke = 0.3) +
+        facet_wrap(vars(LIPID), ncol = 5, nrow = 4, scales="free_y") +
+        scale_shape_manual(na.value = NA, values = qc_shapes) +
+        scale_fill_manual(values = qc_colors, na.value = NA) +
+        scale_colour_manual(values = qc_colors, na.value = NA) +
+        scale_x_continuous(breaks = seq(0, max(d_istd$RUN_ID), by = 100 )) + 
+        scale_y_continuous(limits = c(0, NA)) + 
+        theme_bw(base_size = 8) 
+ggsave(plot = p, filename = here("output/runscatter_ISTD.pdf"),
+       width = 280, height = 180, units = "mm")
+plot(p)
+```
+
+## 6. Normalization and quantification
+
+We decide now to start with processing the data. We will use the ISTD to normalize and calculate ("relative") concentrations, based on the known amount of the spiked-in ISTD and the sample amount.
+
+$$
+[LIPID] = \biggl(\frac{Lipid_i}{ISTD_{class}}\biggr) \biggl(\frac{ISTD_{vol}}{Sample_{amount}}\biggr) 
+$$
+
+In the code below, we are first importing a table that maps each measured lipid species with the ISTD it should be normalized with. Additionally, we import a table that defines the concentrations of the ISTD in the spike-in solution. Furthermore, we know that 4.5 µL ISTD solution was spiked into 10 µL plasma. We first join the tables together as shown in Figure 2, then group the table into ISTD groups, divide all lipids of this group with the ISTD and then rowwise calculate the concentrations.
+
+```{r 5-process-data}
+d_istd_map <- readr::read_csv(file = here("data/ProjectWork/ISTD_mapping.csv"),
+                          col_names = TRUE, trim_ws = TRUE, col_types = "c")
+
+d_istd_conc <- readr::read_csv(file = here("data/ProjectWork/ISTD_conc.csv"),
+                          col_names = TRUE, trim_ws = TRUE, col_types = "c")
+
+d_processed <- d_long |> 
+  left_join(d_istd_map, by = c("LIPID")) |> 
+  left_join(d_istd_conc, by = c("ISTD")) |> 
+  mutate(isISTD = (LIPID == ISTD)) |> 
+  group_by(ISTD, FILENAME) |> 
+  mutate(normAREA = AREA/AREA[isISTD],
+         CONC = normAREA * RF * ISTD_conc_nM / 1000 * 4.5 / 10) |> 
+  ungroup()
+```
+
+## 7. Inspecting the normalized data
+
+Normalization with the class-specific ISTD often helps to remove systematic drifts and batch effects, but may also introduce additional noise and artefacts. Let's have a look on the how the data looks after normalization.
+
+Before we plotted the ISTD runscatter in one page, however if we would like to look at all species we could distribute the plots over several pages. There are different ways to archive this. One possibility is using `facet_wrap_paginate()` from the `ggforce` package, but this can be slow when having large datasets. We here are using another, manual, approach, by slicing the long table into pages that will then be plotted.
+
+Furthermore, since we are going to use this plot again later, we make function for this plot, so that we can conveniently plot again later.
+
+```{r 6-plot-runscatter-conc, warning: false, message: false}
+
+# We define the function
+
+runscatter <- function(data, var){
+  plot_page <- function(data, nrows, ncols){
+   ggplot(data, aes(x=RUN_ID, y={{var}})) + 
+          geom_point(aes(colour = QC_TYPE, fill = QC_TYPE, shape  = QC_TYPE),
+                     size = 2, alpha =0.7, stroke = 0.3) +
+          facet_wrap(vars(LIPID), ncol = ncols, nrow = nrows, scales="free_y") +
+          geom_smooth(data= subset(data, QC_TYPE=="BQC"), aes(x=RUN_ID, y={{var}}), 
+                      method = "loess", span = 0.75, formula = y ~ x, se = FALSE,
+                      na.rm = TRUE, color = "brown3", linewidth = .7)+
+          scale_shape_manual(na.value = NA, values = qc_shapes) +
+          scale_fill_manual(values = qc_colors, na.value = NA) +
+          scale_colour_manual(values = qc_colors, na.value = NA) +
+          scale_x_continuous(breaks = seq(0, max(d_istd$RUN_ID), by = 100 )) + 
+          scale_y_log10() +
+          #scale_y_continuous(limits = c(0, NA)) + 
+          theme_bw(base_size = 8) 
+   }
+  rows_page = 3
+  columns_page = 3
+  #get a table with page numbers for each lipid species
+  d_pages <- data |> select(LIPID) |> distinct() |> 
+    mutate(page_no = ceiling(row_number() / (rows_page * columns_page)))
+  
+  #plot each page from a nested table
+  d_plots <- data %>%
+    filter(!str_detect(QC_TYPE, "BLK|RQC"), !str_detect(LIPID, "ISTD")) |> 
+    left_join(d_pages, by = "LIPID") %>%
+    group_by(page_no) |> 
+    nest() |> 
+    mutate(plt = map(data, ~ plot_page(., rows_page, columns_page)))
+  
+  # Save pages to a PDF. 
+  pdf(file = here(paste0("output/runscatter_", quo_name(enquo(var)), ".pdf")),
+      onefile = TRUE, width = 280/25.4, height = 180/25.4)
+  #d_plots$plt 
+  invisible(purrr::walk(d_plots$plt, print)) # use this to prevent printing of index
+  dev.off()
+}
+# and run it twice, plotting raw areas and concentrations
+
+
+d_temp <- d_processed #|> filter(str_detect(LIPID, "CE ")) 
+runscatter(d_temp, AREA)
+runscatter(d_temp, CONC)
+```
+
+## 8. Drift and batch correction
+
+We observe some drifts in some lipid species - this even after normalization with the ISTD. We will now try to correct these drifts. While drifts are often cause by gradual changes in instrument performance, batch effects can e.g. occur when samples are extracted in batches or when e.g. the instrument needs to be stopped. In both cases, we here assume that the that the `BQC` (=batch/process QC) represent drift and batch effects seen also in the study samples. First, we apply an within-batch smoothing, and then align the batches using median centering.
+
+For the smoothing in the code example below, we will use `loess` based on log-transformed data to make it more robust. Setting of the smoothing parameter, i.e. `loess span`, depends on your data, we will chose the default of 0.75.
+
+Note, that for the analysis in the publication another algorithm, built-in to MRMkit [@teo], was used, which is based on the all data points rather than just QCs.
+
+```{r 7-drift-batch-correct}
+d_processed_corr <- d_processed # make a new copy
+
+get_loess <- function(d) {
+  tryCatch({
+    dt <- tibble::tibble(RUN_ID = seq(min(d$RUN_ID), max(d$RUN_ID), 1))
+    res <- stats::loess(
+      data = subset(d, QC_TYPE == "BQC"), formula = CONC_LOG ~ RUN_ID, span = 0.75) |> 
+      stats::predict(dt) %>% as.numeric()
+    res},
+  error = function(e) {return(rep(NA_real_, length(d$RUN_ID)))})
+}
+
+# Within-batch smoothing
+
+d_processed_corr$CONC_LOG <- log2(d_processed_corr$CONC)
+
+d_processed_corr <- d_processed_corr |> 
+  group_by(LIPID, BATCH) |>  
+  nest() |>
+  mutate(Y_PREDICTED = purrr::map(data, \(x) get_loess(x))) |> 
+  unnest(cols = c(data, Y_PREDICTED))
+
+d_processed_corr <- d_processed_corr %>%
+  group_by(LIPID, BATCH) |> 
+  mutate(Y_PREDICTED = Y_PREDICTED - median(Y_PREDICTED, na.rm = TRUE),
+         CONC_ADJ = 2^(CONC_LOG - Y_PREDICTED)) |> ungroup()
+
+# Between-batch median-centering
+
+d_processed_corr <- d_processed_corr |> 
+  dplyr::group_by(LIPID,  BATCH) |> 
+  dplyr::mutate(CONC_ADJ = CONC_ADJ/median(CONC_ADJ[QC_TYPE == "BQC"], na.rm = TRUE)) |> 
+  dplyr::ungroup()
+d_processed_corr <- d_processed_corr |> 
+  dplyr::group_by(LIPID) |> 
+  dplyr::mutate(CONC_ADJ =  CONC_ADJ * median(CONC_ADJ[QC_TYPE == "BQC"], na.rm = TRUE)) |> 
+  dplyr::ungroup()
+
+runscatter(d_processed_corr, CONC_ADJ)
+
+```
+
+## 9. Verifying linear response of the measurements
+
+Injected sample amount need to be carefully chose when measuring analytes covering a large concentration range. It is a trade-off between sensitivity and not exceeding the linear range of the measurement, as well as other factors. While protocols define an optimal injected sample amount (volume), the linear range of the the LC-MS system can change, even within an longer analysis sequence. We therefore always check the linear response as a QC, using dilution, or injection volume, series of a pooled QC extract.
+
+Let's plot the response curves from ISTDs measured at the beginning and end of this run. For this we extract the curve number and relative concentration from the sample name.
+
+```{r 8-plot-response-curves,  fig.height=6.5, fig.width=10,}
+
+d_rqc <- d_long |> 
+  filter(QC_TYPE == "RQC") |> 
+  separate(col = FILENAME, 
+           into = c("TYPE","CURVE_NO","AMOUNT"), 
+           sep = "-", 
+           remove = FALSE, convert = TRUE)
+d_rqc$CURVE_NO <- factor(d_rqc$CURVE_NO)
+d_rqc$AMOUNT <- as.numeric(d_rqc$AMOUNT)
+
+p <- ggplot(d_rqc |> filter(str_detect(LIPID, "CE 18:1")), 
+            aes(x=AMOUNT, y=AREA, color = CURVE_NO, group = CURVE_NO)) +
+        geom_point(size = 2, alpha =0.7, stroke = 0.3) +
+        facet_wrap(vars(LIPID), ncol = 5, nrow = 4, scales="free_y") +
+        ggpmisc::stat_poly_line(linewidth = 0.5, se = FALSE) +
+        ggpmisc::stat_poly_eq(aes(label = after_stat(rr.label)),
+                     size = 2.4,
+                     lineheight = 1, ) +
+        scale_colour_manual(values = c("1" = "cyan4", "2" ="blue3")) +
+        scale_x_continuous(limits = c(0, NA)) + 
+        scale_y_continuous(limits = c(0, NA)) + 
+        labs(x = "Rel. Sample Amount (%)") +
+        theme_bw(base_size = 8) 
+ggsave(plot = p, filename = here("output/reponse_curves.pdf"),
+       width = 130, height = 60, units = "mm")
+plot(p)
+```
+
+| We see that the response is fairly linear for most species, whereby the TG ISTD shows some saturation. The two curves mostly overlap, suggesting no major changes in sensitivity and linearity over this time, except Cer d18:1/12:0 that showed a considerable drift (see Figure 1).
+
+## 10. Verifying lipid identifications
+
+Peak integration of large panels covering many (hundreds) of lipid species needs is challenging. Therefore, it is always good to perform check identification in the final raw dataset. Our data is from a revered phase (RP) - LC where the retention time (RT) increased with increasing carbon chain length and increasing saturation. We can therefore plot the chain length and saturation and possiblly identify potential miss annotations.
+
+We import the 'peak info' table obtained during peak integration with MRMkit. This data file also contains the precurson and product ion m/z values. To obtain the chain length and saturation from each lipid species, we use the [`rgoslin`](http://www.bioconductor.org/packages/release/bioc/html/rgoslin.html) package. `rgoslin` furthermore converts lipid names of different 'dialects' to a normalized standard name. However, `rgoslin` is not able to understand all 'in-house' dialects, so we provide it with cleaned lipid names, which are also found in the 'peak info' table.
+
+```{r 9-get-chain-info}
+d_lipids <- readr::read_csv(file = here("data/ProjectWork/SPERFECT_SLINGpanel_MRMkit_peakQC.csv"), show_col_types = FALSE)
+
+
+# We get the class names and remove the isotope info in []
+d_lipids <- d_lipids |>
+  mutate(LIPID_tmp = str_replace(LIPID, " O\\-", "-O "),
+         LIPID_tmp = str_replace(LIPID_tmp, " P\\-", "-P "), .after = LIPID) |> 
+  separate(LIPID_tmp, into = c("CLASS", "CHAINS", "OTHER"), 
+           sep = " ", remove = TRUE, extra = "drop") |> 
+  mutate(LIPID_NAME_CLEAN = str_remove(LIPID_NAME_CLEAN, "\\[.*"))
+
+# rgoslin needs a vector with lipid names
+d_goslin <- rgoslin::parseLipidNames(unique(d_lipids$LIPID_NAME_CLEAN))
+
+d_goslin_sel <- d_goslin |> 
+  select(Original.Name, Normalized.Name, Lipid.Maps.Main.Class, Total.C, Total.DB) 
+
+d_lipid_info <- d_lipids |> left_join(d_goslin_sel, by=c("LIPID_NAME_CLEAN"="Original.Name"))
+
+```
+
+And now let's plot the data. Note that in this example we plot all the species, before we applied any QC. Depending on your workflow this step may be better used after QC filtering.
+
+```{r 10-chain-vs-rt-plot,  fig.height=6.5, fig.width=10}
+
+d_lipid_info$Total.DB <- factor(d_lipid_info$Total.DB)
+
+p <- ggplot(d_lipid_info |> drop_na(Total.C), 
+            aes(x=Total.C, y=RT, color = Total.DB, group = Total.DB)) +
+        geom_point(size = 2, alpha =0.75, stroke = 0.3) +
+        facet_wrap(vars(CLASS), ncol = 6, nrow = 6, scales="free") +
+        ggpmisc::stat_poly_line(method = "lm", linewidth = 0.5, se = FALSE, na.rm = TRUE) +
+        ggpmisc::stat_poly_eq(aes(label = after_stat(rr.label)),
+                     size = 2.4,
+                     lineheight = 1, na.rm = TRUE ) +
+        labs(x = "Rel. Sample Amount (%)") +
+        theme_bw(base_size = 8) 
+ggsave(plot = p, filename = here("output/chain_vs_rt.pdf"),
+       width = 260, height = 160, units = "mm")
+plot(p)
+
+```
+
+##  11. Calculate quality-control (QC) values
+
+To evaluate the quality of the analysis and to filter the date we calculate different QC values for each lipid species. This included the analytical coefficient of variation (%CV) based on the BQCs, the signal-to-blank ratio, and the r squared of the response curves.
+
+A word of caution here: we apply drift/batch correction to all species here, regardless if there are drift/batch effects. Such correction can also introduce variability and artefacts. Furthermore, we are using the BQCs for smoothing and median centering, the %CVs of the BQCs are therefore as consequence. Ideally we would use a QC subset or another QC set to determine the %CV.
+
+```{r 11-calc-qc}
+
+## run this line below if you want test QC filtering without drift/batch correction
+#d_processed_corr <- d_processed |> mutate(CONC_ADJ = CONC) # !!!!!!! overwrites correction
+
+rsd <- function(x) sd(x, na.rm = TRUE)/mean(x, na.rm = TRUE)
+
+d_qc_1 <- d_processed_corr |> 
+  group_by(LIPID) |> 
+  summarise(
+    Area_SPL = median(AREA[QC_TYPE == "SAMPLE"], rm.na = TRUE),
+    SB_ratio = Area_SPL/median(AREA[QC_TYPE == "PBLK"], rm.na = TRUE),
+    Conc_SPL = median(CONC_ADJ[QC_TYPE == "SAMPLE"], rm.na = TRUE),
+    CV_TQC = rsd(CONC_ADJ[QC_TYPE == "TQC"]) * 100,
+    CV_BQC = rsd(CONC_ADJ[QC_TYPE == "BQC"]) * 100,
+    CV_SPL = rsd(CONC_ADJ[QC_TYPE == "SAMPLE"]) * 100,
+    D_ratio = sd(CONC_ADJ[QC_TYPE == "BQC"])/sd(CONC_ADJ[QC_TYPE == "SAMPLE"])) |> ungroup()
+
+f <- function(x) broom::glance(lm(AREA ~ AMOUNT, data = x))
+
+d_qc_2 <- d_rqc |> 
+  group_by(LIPID, CURVE_NO) |>
+  nest() |> 
+  mutate(res = purrr::map(data, f)) |> 
+  unnest(res)
+
+d_qc_2 <- d_qc_2 |> 
+  select(LIPID, CURVE_NO, r.squared, p.value) |> 
+  pivot_wider(names_from = CURVE_NO, values_from = c(r.squared, p.value))
+
+d_qc <- d_lipids |> 
+  left_join(d_qc_1, by = "LIPID") |> 
+  left_join(d_qc_2, by = "LIPID")
+
+write_csv(x = d_qc, file = here("output/QC-summary.csv"))
+```
+
+## 12. QC-filtering of dataset
+
+Now we apply a QC-filtering step to the data using our chosen criteria, e.g. CV \< 25%. You can play we these parameters and see how it affects the number of species that pass/fail this step.
+
+For some lipid classes, i.e. DGs , each species was measured via 2 transitions. Which transition is used for quantification was indicated in the metadata file (peakQC), so we can filter for quantifiers. Futhermore, we exclude the ISTDs from the final dataset.
+
+```{r 12-qc-filter}
+d_qc <- d_qc |> 
+  mutate( 
+    QC_pass = 
+    (CV_BQC < 25 | (CV_BQC < 50 & D_ratio < 0.5)) & 
+    SB_ratio > 3 &
+    r.squared_1 > 0.8 &
+    QUANTIFIER &
+    !str_detect(LIPID, "ISTD"))
+
+print(paste0("QC filtering: ", nrow(d_qc[d_qc$QC_pass, ]), " of ", nrow(d_qc), " species passed QC"))
+
+```
+
+So, a total of `r nrow(d_qc[d_qc$QC_pass, ])` of `r nrow(d_qc)` species passed QC. Let us check, if there are lipid classes with many species that failed QC.
+
+## 13. Inspecting the QC-filtering
+
+We now can (and should) have a look at how many species passed the QC criteria and if there are any pattern specific to lipid classes.
+
+```{r 13-plot-qc-filter}
+
+d_qc_summary <- d_qc |> filter(QUANTIFIER) |> dplyr::count(CLASS, QC_pass) 
+
+p <- ggplot(d_qc_summary, 
+       aes(x = CLASS, y = n, fill = QC_pass, group = QC_pass)) +
+  geom_bar(position="stack", stat="identity") + 
+  scale_fill_manual(values = c("FALSE" = "#a6cac9", "TRUE" = "green3")) + 
+  scale_x_discrete(limits=rev)+
+  coord_flip() + theme_bw()
+
+ggsave(plot = p, filename = here("output/qc_summary.pdf"),
+       width = 260, height = 160, units = "mm")
+
+p
+
+```
+
+## 14. Looking for outliers
+
+And as a last step we use a PCA to understand how our BQCs performed and if we have any outliers that need be investigated.
+
+```{r 14-pca-qc}
+
+  d_pca <- d_processed_corr  |> 
+    filter(QC_TYPE %in% c("BQC", "TQC", "SAMPLE"), !str_detect(LIPID, "IS")) |> 
+    select(FILENAME, QC_TYPE, BATCH, LIPID, CONC_ADJ) |> 
+    pivot_wider(names_from = "LIPID", values_from = CONC_ADJ) |> 
+    drop_na() # NA rows of rows that could not be smoothed before
+
+  # This is the outlier !
+  d_pca <- d_pca |> filter(FILENAME != "LT_batch6_51")
+  
+  
+  d_metadata <- d_pca |>  select(FILENAME, QC_TYPE, BATCH) |>  distinct()
+
+  m_raw <- d_pca |> select(-QC_TYPE, -BATCH) %>%
+    select(where(~!any(is.na(.)))) |>
+    column_to_rownames("FILENAME") |>
+    as.matrix()
+
+ m_raw <- log2(m_raw)
+
+dim_x <- 1
+dim_y <- 2
+  # get pca result with annotation
+  pca_res <- prcomp(m_raw, scale = TRUE, center = TRUE)
+  pca_annot <- pca_res |> broom::augment(d_metadata)
+  pca_contrib <- pca_res |> broom::tidy(matrix = "eigenvalues")
+
+  p <- ggplot(data = pca_annot, aes_string(paste0(".fittedPC", dim_x),
+                                           paste0(".fittedPC", dim_y),
+                                           color = "QC_TYPE",
+                                           fill = "QC_TYPE",
+                                           shape = "QC_TYPE",
+                                           label = "FILENAME"
+  )) +
+    ggplot2::geom_hline(yintercept = 0, size = 0.4, color = "grey80") +
+    ggplot2::geom_vline(xintercept = 0, size = 0.4, color = "grey80") +
+    ggplot2::stat_ellipse(geom = "polygon", level = 0.95,alpha = 0.1, size = 0.3) +
+    ggplot2::geom_point(size = 1)
+
+    p <- p +
+      ggplot2::scale_color_manual(values = qc_colors, drop=TRUE) +
+      ggplot2::scale_fill_manual(values = qc_colors, drop=TRUE)+
+      ggplot2::scale_shape_manual(values = qc_shapes, drop=TRUE)
+
+  p <- p +
+    ggplot2::theme_light(base_size =  10) +
+    ggplot2::xlab(glue::glue("PC{dim_x} ({round(pca_contrib[[dim_x,'percent']]*100,1)}%)"))+
+    ggplot2::ylab(glue::glue("PC{dim_y} ({round(pca_contrib[[dim_y,'percent']]*100,1)}%)"))+
+    ggplot2::theme(
+      panel.grid = ggplot2::element_line(size = 0.3, color = "grey95"),
+      panel.border = ggplot2::element_rect(size = 1, color = "grey70"),
+      aspect.ratio=1)
+
+ ggsave(plot = p, filename = here("output/PCA_QC.pdf"),
+       width = 170, height = 170, units = "mm")
+ p
+
+```
+
+## 15. Saving the final dataset
+
+We now save the final, drift-corrected and QC-filtered concentration data as a wide CSV table, which then will be used for Part 2. Have fun! :)
+
+```{r save-processed-data}
+
+# QC filter data
+d_final <- d_processed_corr |> 
+  filter(QC_TYPE == "SAMPLE", !str_detect(LIPID, "ISTD")) |> 
+  right_join(d_qc[d_qc$QC_pass,"LIPID"], by = "LIPID")
+
+d_final_wide <- d_final |> 
+  pivot_wider(id_cols = c(FILENAME, QC_TYPE), names_from = "LIPID", values_from = "CONC_ADJ") 
+
+write_csv(d_final_wide, here("output/qc_filtered_results.csv"))
+```
+
+## 
+
+# References
