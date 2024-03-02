@@ -365,7 +365,7 @@ plot(p)
 
 ```
 
-##  11. Calculate quality-control (QC) values
+## 11. Calculate quality-control (QC) values
 
 To evaluate the quality of the analysis and to filter the date we calculate different QC values for each lipid species. This included the analytical coefficient of variation (%CV) based on the BQCs, the signal-to-blank ratio, and the r squared of the response curves.
 
