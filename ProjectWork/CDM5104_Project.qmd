@@ -56,7 +56,7 @@ library(ggpmisc)
 library(rgoslin)
 library(here)
 
-here::i_am("R/ProjectWork/CDM5104_Project.qmd")
+here::i_am("ProjectWork/CDM5104_Project.qmd")
 ```
 
 ## 3. Importing pre-processed raw data
@@ -67,7 +67,7 @@ In the example study by [@tan2022], the lipidomics analysis was performed using 
 
 ```{r 2-import-raw}
 
-d_orig <- readr::read_csv(file = here("data/ProjectWork/SPERFECT_SLINGpanel_MRMkit_RawAreas_Clean.csv"), col_names = TRUE, trim_ws = TRUE, na = c("NA", "ND", "n.d."))
+d_orig <- readr::read_csv(file = here("ProjectWork/data/SPERFECT_SLINGpanel_MRMkit_RawAreas_Clean.csv"), col_names = TRUE, trim_ws = TRUE, na = c("NA", "ND", "n.d."))
 d_orig
 ```
 
@@ -137,7 +137,7 @@ p <- ggplot(d_istd, aes(x=RUN_ID, y=AREA)) +
         scale_x_continuous(breaks = seq(0, max(d_istd$RUN_ID), by = 100 )) + 
         scale_y_continuous(limits = c(0, NA)) + 
         theme_bw(base_size = 8) 
-ggsave(plot = p, filename = here("output/runscatter_ISTD.pdf"),
+ggsave(plot = p, filename = here("ProjectWork/output/runscatter_ISTD.pdf"),
        width = 280, height = 180, units = "mm")
 plot(p)
 ```
@@ -153,10 +153,10 @@ $$
 In the code below, we are first importing a table that maps each measured lipid species with the ISTD it should be normalized with. Additionally, we import a table that defines the concentrations of the ISTD in the spike-in solution. Furthermore, we know that 4.5 µL ISTD solution was spiked into 10 µL plasma. We first join the tables together as shown in Figure 2, then group the table into ISTD groups, divide all lipids of this group with the ISTD and then rowwise calculate the concentrations.
 
 ```{r 5-process-data}
-d_istd_map <- readr::read_csv(file = here("data/ProjectWork/ISTD_mapping.csv"),
+d_istd_map <- readr::read_csv(file = here("ProjectWork/data/ISTD_mapping.csv"),
                           col_names = TRUE, trim_ws = TRUE, col_types = "c")
 
-d_istd_conc <- readr::read_csv(file = here("data/ProjectWork/ISTD_conc.csv"),
+d_istd_conc <- readr::read_csv(file = here("ProjectWork/data/ISTD_conc.csv"),
                           col_names = TRUE, trim_ws = TRUE, col_types = "c")
 
 d_processed <- d_long |> 
@@ -213,7 +213,7 @@ runscatter <- function(data, var){
     mutate(plt = map(data, ~ plot_page(., rows_page, columns_page)))
   
   # Save pages to a PDF. 
-  pdf(file = here(paste0("output/runscatter_", quo_name(enquo(var)), ".pdf")),
+  pdf(file = here(paste0("ProjectWork/output/runscatter_", quo_name(enquo(var)), ".pdf")),
       onefile = TRUE, width = 280/25.4, height = 180/25.4)
   #d_plots$plt 
   invisible(purrr::walk(d_plots$plt, print)) # use this to prevent printing of index
@@ -308,7 +308,7 @@ p <- ggplot(d_rqc |> filter(str_detect(LIPID, "CE 18:1")),
         scale_y_continuous(limits = c(0, NA)) + 
         labs(x = "Rel. Sample Amount (%)") +
         theme_bw(base_size = 8) 
-ggsave(plot = p, filename = here("output/reponse_curves.pdf"),
+ggsave(plot = p, filename = here("ProjectWork/output/reponse_curves.pdf"),
        width = 130, height = 60, units = "mm")
 plot(p)
 ```
@@ -322,7 +322,7 @@ Peak integration of large panels covering many (hundreds) of lipid species needs
 We import the 'peak info' table obtained during peak integration with MRMkit. This data file also contains the precurson and product ion m/z values. To obtain the chain length and saturation from each lipid species, we use the [`rgoslin`](http://www.bioconductor.org/packages/release/bioc/html/rgoslin.html) package. `rgoslin` furthermore converts lipid names of different 'dialects' to a normalized standard name. However, `rgoslin` is not able to understand all 'in-house' dialects, so we provide it with cleaned lipid names, which are also found in the 'peak info' table.
 
 ```{r 9-get-chain-info}
-d_lipids <- readr::read_csv(file = here("data/ProjectWork/SPERFECT_SLINGpanel_MRMkit_peakQC.csv"), show_col_types = FALSE)
+d_lipids <- readr::read_csv(file = here("ProjectWork/data/SPERFECT_SLINGpanel_MRMkit_peakQC.csv"), show_col_types = FALSE)
 
 
 # We get the class names and remove the isotope info in []
@@ -359,7 +359,7 @@ p <- ggplot(d_lipid_info |> drop_na(Total.C),
                      lineheight = 1, na.rm = TRUE ) +
         labs(x = "Rel. Sample Amount (%)") +
         theme_bw(base_size = 8) 
-ggsave(plot = p, filename = here("output/chain_vs_rt.pdf"),
+ggsave(plot = p, filename = here("ProjectWork/output/chain_vs_rt.pdf"),
        width = 260, height = 160, units = "mm")
 plot(p)
 
@@ -405,7 +405,7 @@ d_qc <- d_lipids |>
   left_join(d_qc_1, by = "LIPID") |> 
   left_join(d_qc_2, by = "LIPID")
 
-write_csv(x = d_qc, file = here("output/QC-summary.csv"))
+write_csv(x = d_qc, file = here("ProjectWork/output/QC-summary.csv"))
 ```
 
 ## 12. QC-filtering of dataset
@@ -445,7 +445,7 @@ p <- ggplot(d_qc_summary,
   scale_x_discrete(limits=rev)+
   coord_flip() + theme_bw()
 
-ggsave(plot = p, filename = here("output/qc_summary.pdf"),
+ggsave(plot = p, filename = here("ProjectWork/output/qc_summary.pdf"),
        width = 260, height = 160, units = "mm")
 
 p
@@ -510,7 +510,7 @@ dim_y <- 2
       panel.border = ggplot2::element_rect(size = 1, color = "grey70"),
       aspect.ratio=1)
 
- ggsave(plot = p, filename = here("output/PCA_QC.pdf"),
+ ggsave(plot = p, filename = here("ProjectWork/output/PCA_QC.pdf"),
        width = 170, height = 170, units = "mm")
  p
 
@@ -530,7 +530,7 @@ d_final <- d_processed_corr |>
 d_final_wide <- d_final |> 
   pivot_wider(id_cols = c(FILENAME, QC_TYPE), names_from = "LIPID", values_from = "CONC_ADJ") 
 
-write_csv(d_final_wide, here("output/qc_filtered_results.csv"))
+write_csv(d_final_wide, here("ProjectWork/output/qc_filtered_results.csv"))
 ```
 
 ## 
