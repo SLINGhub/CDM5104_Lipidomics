@@ -53,7 +53,7 @@ knitr::opts_chunk$set(
 library(tidyverse)
 library(broom)
 library(ggpmisc)
-library(rgoslin)
+
 library(here)
 
 here::i_am("ProjectWork/CDM5104_Project.qmd")
@@ -93,6 +93,8 @@ d_long <- d_orig |>
 
 
 d_long
+
+write_csv(x = d_long, file = "output/data_long_format.csv")
 ```
 
 ## 5. A first look at the analysis
