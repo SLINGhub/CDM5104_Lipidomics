@@ -6,7 +6,7 @@
 
 This repository contains materials for a student project in which you will go through some key aspects of the data processing workflow in lipidomics/metabolomics analysis.
 
-See [project notebook](CDM5104_Lipidomics.pdf) for detailed instructions and code.
+See [CDM5104_Lipidomics.pdf](https://github.com/SLINGhub/CDM5104_Lipidomics/blob/master/CDM5104_Project.pdf) for detailed instructions and code.
 
 ## License
 
