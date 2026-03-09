@@ -18,7 +18,11 @@ In this project, you will go through some key aspects of the data processing wor
 
 Work through the step-by-step instructions below to be able to answer the project questions. Please feel free to contact me anytime if you have questions or issues running the software and code.
 
-# 2. Installation of required software
+# 2. Datasets and required software
+
+### Datasets
+
+The data files used in this project can be found in the folder "data". Please unzip the files "Plasma_QC_1_POS.mzML.zip" and "Plasma_QC_1_NEG.mzML.zip" before using them in the next section.
 
 ## mzmine
 
@@ -39,7 +43,7 @@ If you prefer using RStudio ([https://posit.co/download/rstudio-desktop](https:/
 
 # 3. Data preprocessing of untargeted lipidomics raw data
 
-Start mzmine (see Section 1) and import the raw data file "Plasma_QC-1_POS.mzML" by drag and drop to the tab "MS Data Files". Right-click on the file name and select "Show 3D plot", click on "Auto Range", and then "OK"
+Start mzmine (see Section 1) and import the raw data file "Plasma_QC-1_POS.mzML" (see previous section 2) by drag and drop to the tab "MS Data Files". Right-click on the file name and select "Show 3D plot", click on "Auto Range", and then "OK"
 
 ![](images/paste-6.png){fig-align="center" width="614"}
 
