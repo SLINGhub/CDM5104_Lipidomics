@@ -57,12 +57,14 @@ Start mzmine (see Section 1) and import the raw data file "Plasma_QC-1_POS.mzML"
 
 Now double-click on the raw data file name, this should open a view with a Base Peak Intensity (BPI) chromatogram, spectra visualization, and table with identified features.
 
+**Note:** The screenshot/view shown is from MZmine running on **macOS (**4.8.30). On other operating systems or MZmine versions, the BPI chromatogram may appear different, and the displayed *m/z* values may vary. Until this page is fully updated, please refer to the project guidance session for additional details.
+
 ![](images/paste-7.png){fig-align="center" width="619"}
 
 ::: {.callout-note appearance="simple"}
 ## Task 1 c
 
-**(c)** Now look at the base peak intensity (BPI) chromatogram. Select the m/z values of the two highest peaks (876.8005 and 758.5688) and search for possible lipid species matching using the LIPID MAPS database. Describe the results of this search and discuss why multiple matches were returned for one of the m/z values and if an assignment can be made at this stage.
+**(c)** Now look at the base peak intensity (BPI) chromatogram. Select the m/z values of the two highest peaks (876.8005 and 758.5688) and search for possible lipid species matching using the LIPID MAPS database (**Important**: Select **"All Positive Ions"**). Describe the results of this search and discuss why multiple matches were returned for one of the m/z values and if an assignment can be made at this stage.
 :::
 
 Now check the table below and search for the row with a precursor m/z 758.5688. Click on this row and check the MS/MS spectra in the top left panel. Consult lecture notes or online resources (e.g. Lipidmaps) for Task 2.
@@ -77,7 +79,9 @@ Now check the table below and search for the row with a precursor m/z 758.5688. 
 **(c)** Revisit your answer to Task 1c. Would the information from the MS/MS fragment ion help to identify which of the MS1 matches may be correct/predominant? Explain your answer.
 :::
 
-Now that we have some idea which compound/lipid is represented by the abundant feature at m/z 758, we will now analyze untargeted data acquired in negative ion mode of the same sample. For this we import the corresponding file "Plasma_QC_NEG.mzML". In negative mode, lipids form adducts with different adduct ions, which has to be considered when calculating the m/z value. Phospholipids, such as phosphatidylcholine, form formate adducts, since ammonium formate (HCOO^-^) was present in the mobile phase used for the liquid chromatography. Assuming the {M+H\]^+^ ion has an m/z of 758.5688, then the corresponding \[M+HCOO\]^-^ ion would have an m/z of 802.5592. Indeed, we see the highest base peak in the negative ion mode sample is 802.5599, very close to the predicted m/z. Let's select the feature with the precursor m/z of 802.5599 and check the MS/MS spectra, as we did in positive mode. We see that compared to the positive mode, this spectra is more complex and potentially also more informative. Let's do a spectral search again against a spectral database. Doing so within MZmine is possible, but requires a few additional steps which is beyond the scope of this project work. We therefore will use the public database Massbank ([https://massbank.eu](https://massbank.eu/)) to search for potential matches of this spectra.
+Now that we have some idea which compound/lipid is represented by the abundant feature at m/z 758, we will now analyze untargeted data acquired in negative ion mode of the same sample. For this we import the corresponding file "Plasma_QC_NEG.mzML". In negative mode, lipids form adducts with different adduct ions, which has to be considered when calculating the m/z value. Phospholipids, such as phosphatidylcholine, form formate adducts, since ammonium formate (HCOO^-^) was present in the mobile phase used for the liquid chromatography. Assuming the {M+H\]^+^ ion has an m/z of 758.5688, then the corresponding \[M+HCOO\]^-^ ion would have an m/z of 802.5592. Indeed, we see the highest base peak in the negative ion mode sample is 802.5599, very close to the predicted m/z. Let's select the feature with the precursor m/z of 802.5599 and check the MS/MS spectra, as we did in positive mode. We see that compared to the positive mode, this spectra is more complex and potentially also more informative. Let's do a spectral search again against a spectral database. Doing so within MZmine is possible, but requires a few additional steps which is beyond the scope of this project work. We will therefore use the public MassBank database ([https://massbank.eu](https://massbank.eu/)) to identify potential matches for this spectrum.
+
+To do so, click **Search** in the top navigation bar, then select **Spectral Search**, then **Similarity Search**. In the **Peak list** field, enter the accurate *m/z* values of the three most abundant fragments (those beginning at 279, 255, and 742) along with their approximate relative abundances. Enter each fragment on a separate line, with the *m/z* and relative abundance separated by a single space (format: `m/z RelAbundance`), as shown in the empty peak list template on the website.
 
 ![](images/paste-9.png){fig-align="center" width="551"}
 
@@ -217,7 +221,7 @@ plot_runscatter(
   data = myexp,
   variable = "conc",
   qc_types = c("BQC", "TQC", "SPL"),
-  include_feature_filter = "^PC" ,
+  #include_feature_filter = "^PC" ,
   cap_outliers = TRUE,
   log_scale = FALSE,
   output_pdf = TRUE,
